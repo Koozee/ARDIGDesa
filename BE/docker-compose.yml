@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  # Kita ganti nama service-nya agar lebih jelas
+  mysql-db:
+    # Menggunakan image resmi MySQL versi 8
+    image: mysql:8.0
+
+    restart: always
+
+    # PERHATIKAN: Variabel environment untuk MySQL berbeda
+    environment:
+      MYSQL_ROOT_PASSWORD: koozeedev # Ganti ini
+      MYSQL_DATABASE: arsip_digital_db # Nama database Anda
+      MYSQL_USER: koozeedev         # Username yang akan Anda gunakan
+      MYSQL_PASSWORD: koozeedev       # Password untuk user_desa
+
+    # Port default MySQL adalah 3306
+    ports:
+      - "3306:3306"
+      
+    # Path volume untuk data MySQL juga berbeda
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+# Mendefinisikan "named volume" untuk MySQL
+volumes:
+  mysql_data:

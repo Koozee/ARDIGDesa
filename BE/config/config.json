@@ -1,0 +1,23 @@
+{
+  "development": {
+    "username": "koozeedev",
+    "password": "koozeedev",
+    "database": "arsip_digital_db",
+    "host": "127.0.0.1",
+    "dialect": "mysql"
+  },
+  "test": {
+    "username": "koozeedev",
+    "password": "koozeedev",
+    "database": "arsip_digital_db",
+    "host": "127.0.0.1",
+    "dialect": "mysql"
+  },
+  "production": {
+    "username": "koozeedev",
+    "password": "koozeedev",
+    "database": "arsip_digital_db",
+    "host": "127.0.0.1",
+    "dialect": "mysql"
+  }
+}
