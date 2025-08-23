@@ -18,6 +18,7 @@ import ProtectedRoute from "@/components/ProtectedRoute.jsx";
 import Profile from "@/pages/Profile.jsx";
 import ManageUser from "@/pages/ManageUser.jsx";
 import KKDetail from "@/pages/KKDetail.jsx";
+import DocDetail from "@/pages/DocDetail.jsx";
 
 const router = createBrowserRouter([
   {
@@ -69,6 +70,14 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <KKDetail />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/document/detail/:documentId",
+    element: (
+      <ProtectedRoute>
+        <DocDetail />
       </ProtectedRoute>
     ),
   },

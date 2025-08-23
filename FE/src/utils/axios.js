@@ -20,7 +20,8 @@ axiosInstance.interceptors.request.use((config) => {
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const requestUrl = error?.config?.url || '';
+    if (error.response?.status === 401 && !requestUrl.includes('/user/login')) {
       // Token expired atau tidak valid
       authService.removeToken();
       window.location.href = '/login';

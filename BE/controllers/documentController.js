@@ -1,4 +1,5 @@
 const sequelize = require("../config/database");
+const { Op } = require("sequelize");
 const { Document, User, Category, FamilyMember } = require("../models");
 const fs = require("fs");
 const Tesseract = require("tesseract.js"); // <-- IMPORT TESSERACT
@@ -6,7 +7,7 @@ const Tesseract = require("tesseract.js"); // <-- IMPORT TESSERACT
 // Helper function untuk parsing teks mentah dari OCR KK
 const parseKKData = (text) => {
   const extractedData = {
-    metadata: {},
+    rincian_dokumen: {},
     anggota_keluarga: [],
   };
 
@@ -54,18 +55,18 @@ const parseKKData = (text) => {
         }
       }
     }
-    if (nomorKK) extractedData.metadata.nomor_kk = nomorKK;
+    if (nomorKK) extractedData.rincian_dokumen.nomor_kk = nomorKK;
 
     const alamatMatch = text.match(alamatRegex);
-    if (alamatMatch) extractedData.metadata.alamat = alamatMatch[1].trim();
+    if (alamatMatch) extractedData.rincian_dokumen.alamat = alamatMatch[1].trim();
 
     // Ekstraksi Desa/Kelurahan dan Kecamatan
     const desaMatch = text.match(desaRegex);
-    if (desaMatch) extractedData.metadata.desa_kelurahan = desaMatch[1].trim();
+    if (desaMatch) extractedData.rincian_dokumen.desa_kelurahan = desaMatch[1].trim();
 
     const kecamatanMatch = text.match(kecamatanRegex);
     if (kecamatanMatch)
-      extractedData.metadata.kecamatan = kecamatanMatch[1].trim();
+      extractedData.rincian_dokumen.kecamatan = kecamatanMatch[1].trim();
   } catch (err) {
     console.error("Error saat parsing teks OCR:", err);
   }
@@ -95,13 +96,13 @@ const documentController = {
       // Mem-parsing teks mentah untuk mendapatkan data terstruktur
       const extractedData = parseKKData(result.data.text);
       console.log(extractedData);
-      // Kirim data hasil parsing ke frontend (hanya metadata tanpa anggota_keluarga)
+      // Kirim data hasil parsing ke frontend (hanya rincian_dokumen tanpa anggota_keluarga)
       const isDebug =
         String(req.query.debug || "").toLowerCase() === "true" ||
         req.query.debug === "1";
       const responsePayload = {
         message: "File berhasil dipindai!",
-        data: { metadata: extractedData.metadata },
+        data: { rincian_dokumen: extractedData.rincian_dokumen },
       };
       if (
         isDebug &&
@@ -141,13 +142,13 @@ const documentController = {
         userId,
         categoryId,
         tipe_dokumen,
-        metadata,
+        rincian_dokumen,
         anggota_keluarga,
       } = req.body;
 
       // Parsing jika masih string
-      if (typeof metadata === "string") {
-        metadata = JSON.parse(metadata);
+      if (typeof rincian_dokumen === "string") {
+        rincian_dokumen = JSON.parse(rincian_dokumen);
       }
       if (typeof anggota_keluarga === "string") {
         anggota_keluarga = JSON.parse(anggota_keluarga);
@@ -162,7 +163,7 @@ const documentController = {
           tanggal_dokumen,
           tipe_dokumen,
           path_file: path_file,
-          metadata, // Ini adalah objek JSON
+          rincian_dokumen, // Ini adalah objek JSON
           userId,
           categoryId,
         },
@@ -204,15 +205,51 @@ const documentController = {
   // 2. READ: Mengambil semua dokumen
   getAllDocuments: async (req, res) => {
     try {
+      const {
+        page = 1,
+        limit = 10,
+        searchJudul = "",
+        searchNomor = "",
+        tanggal = "",
+      } = req.query;
+
+      const numericLimit = Math.max(parseInt(limit, 10) || 10, 1);
+      const numericPage = Math.max(parseInt(page, 10) || 1, 1);
+      const offset = (numericPage - 1) * numericLimit;
+
+      const whereClause = { [Op.and]: [] };
+      if (searchJudul) {
+        whereClause[Op.and].push({ judul: { [Op.like]: `%${searchJudul}%` } });
+      }
+      if (searchNomor) {
+        whereClause[Op.and].push({ nomor_surat: { [Op.like]: `%${searchNomor}%` } });
+      }
+      if (tanggal) {
+        whereClause[Op.and].push({ tanggal_dokumen: tanggal });
+      }
+      if (whereClause[Op.and].length === 0) delete whereClause[Op.and];
+
+      const total = await Document.count({ where: whereClause });
       const documents = await Document.findAll({
-        order: [["createdAt", "DESC"]], // Urutkan dari yang terbaru
+        where: whereClause,
+        order: [["createdAt", "DESC"]],
+        offset,
+        limit: numericLimit,
         include: [
-          // Sertakan data dari tabel lain yang berelasi
           { model: User, attributes: ["id", "nama_lengkap"] },
           { model: Category, attributes: ["id", "nama_kategori"] },
         ],
       });
-      res.status(200).json(documents);
+
+      return res.status(200).json({
+        data: documents,
+        pagination: {
+          page: numericPage,
+          limit: numericLimit,
+          total,
+          totalPages: Math.ceil(total / numericLimit) || 1,
+        },
+      });
     } catch (error) {
       res.status(500).json({
         message: "Gagal mengambil data dokumen",
@@ -247,7 +284,7 @@ const documentController = {
     }
   },
 
-  // 4. UPDATE: Memperbarui metadata dokumen
+  // 4. UPDATE: Memperbarui rincian_dokumen dokumen
   updateDocument: async (req, res) => {
     try {
       const { id } = req.params;
@@ -256,7 +293,7 @@ const documentController = {
         nomor_surat,
         tanggal_dokumen,
         categoryId,
-        metadata,
+        rincian_dokumen,
         tipe_dokumen,
       } = req.body;
 
@@ -272,7 +309,7 @@ const documentController = {
         tanggal_dokumen,
         tipe_dokumen,
         categoryId,
-        metadata,
+        rincian_dokumen,
       });
 
       res
@@ -313,19 +350,56 @@ const documentController = {
     }
   },
 
-  // 2a. READ: Mengambil dokumen berdasarkan categoryId
+  // 2a. READ: Mengambil dokumen berdasarkan categoryId (dengan pagination dan filter query)
   getDocumentsByCategory: async (req, res) => {
     try {
       const { categoryId } = req.params;
+      const {
+        page = 1,
+        limit = 10,
+        searchJudul = "",
+        searchNomor = "",
+        tanggal = "",
+      } = req.query;
+
+      const numericLimit = Math.max(parseInt(limit, 10) || 10, 1);
+      const numericPage = Math.max(parseInt(page, 10) || 1, 1);
+      const offset = (numericPage - 1) * numericLimit;
+
+      const andConditions = [{ categoryId }];
+      if (searchJudul) {
+        andConditions.push({ judul: { [Op.like]: `%${searchJudul}%` } });
+      }
+      if (searchNomor) {
+        andConditions.push({ nomor_surat: { [Op.like]: `%${searchNomor}%` } });
+      }
+      if (tanggal) {
+        andConditions.push({ tanggal_dokumen: tanggal });
+      }
+
+      const whereClause = andConditions.length ? { [Op.and]: andConditions } : { categoryId };
+
+      const total = await Document.count({ where: whereClause });
       const documents = await Document.findAll({
-        where: { categoryId },
+        where: whereClause,
         order: [["createdAt", "DESC"]],
+        offset,
+        limit: numericLimit,
         include: [
           { model: User, attributes: ["id", "nama_lengkap"] },
           { model: Category, attributes: ["id", "nama_kategori"] },
         ],
       });
-      res.status(200).json(documents);
+
+      return res.status(200).json({
+        data: documents,
+        pagination: {
+          page: numericPage,
+          limit: numericLimit,
+          total,
+          totalPages: Math.ceil(total / numericLimit) || 1,
+        },
+      });
     } catch (error) {
       res.status(500).json({
         message: "Gagal mengambil dokumen berdasarkan kategori",

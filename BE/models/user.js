@@ -41,7 +41,7 @@ User.init(
     sequelize,
     modelName: "User",
     tableName: "users",
-    timestamps: true, // Otomatis membuat kolom createdAt dan updatedAt
+    timestamps: true,
     hooks: {
       beforeCreate: async (user) => {
         if (user.password) {

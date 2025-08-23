@@ -4,7 +4,7 @@ import DashboardLayout from "@/layouts/dashboard";
 import { useAuth } from "@/hooks/useAuth";
 import TopNavbarDashboard from "../fragments/Topnavbar";
 import { axiosInstance } from "@/utils/axios";
-import { BsFileBarGraph, BsFiles, BsFileText } from "react-icons/bs";
+import { BsFileBarGraph, BsFiles, BsFileText, BsPlusSquare } from "react-icons/bs";
 
 export default function Dashboard() {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -19,6 +19,7 @@ export default function Dashboard() {
     totalDocuments: 0,
     totalCategories: 0,
     documentsThisMonth: 0,
+    topCategories: [],
   });
 
   // Fetch data dari database
@@ -27,14 +28,17 @@ export default function Dashboard() {
       try {
         setLoading(true);
 
-        // Fetch dokumen
+        // Fetch dokumen (paginated)
         const documentsResponse = await axiosInstance.get("/documents/getdocs");
-        const documentsData = documentsResponse.data;
+        const documentsPayload = documentsResponse.data || {};
+        const documentsData = documentsPayload.data || [];
         setDocuments(documentsData);
 
-        // Fetch kategori
-        const categoriesResponse = await axiosInstance.get("/category/getcats");
-        const categoriesData = categoriesResponse.data;
+        // Fetch kategori dengan pagination (ambil semua dengan limit besar)
+        const categoriesResponse = await axiosInstance.get(
+          "/category/getcats?page=1&limit=100"
+        );
+        const categoriesData = categoriesResponse.data?.categories || [];
         setCategories(categoriesData);
 
         // Hitung statistik
@@ -54,10 +58,27 @@ export default function Dashboard() {
           }
         }).length;
 
+        // Hitung kategori yang paling banyak digunakan
+        const categoryUsage = {};
+        documentsData.forEach((doc) => {
+          if (doc.Category?.nama_kategori) {
+            categoryUsage[doc.Category.nama_kategori] =
+              (categoryUsage[doc.Category.nama_kategori] || 0) + 1;
+          }
+        });
+
+        const topCategories = Object.entries(categoryUsage)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 3)
+          .map(([name, count]) => ({ name, count }));
+
         setStats({
-          totalDocuments: documentsData.length,
+          totalDocuments:
+            (documentsPayload.pagination && documentsPayload.pagination.total) ||
+            documentsData.length,
           totalCategories: categoriesData.length,
           documentsThisMonth: documentsThisMonth,
+          topCategories: topCategories,
         });
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
@@ -156,13 +177,70 @@ export default function Dashboard() {
         </section>
 
         {/* Tombol Aksi Cepat */}
-        <div className="mb-8 flex justify-start">
+        <div className="mb-8 flex justify-start gap-4">
           <button
             onClick={() => (window.location.href = "/upload-document")}
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-lg shadow-lg transition-all duration-200 flex items-center gap-2 cursor-pointer"
           >
-            <span className="text-2xl leading-none">+</span> Unggah Dokumen Baru
+            <BsPlusSquare className="text-2xl leading-none" /> Unggah Dokumen Baru
           </button>
+          <button
+            onClick={() => (window.location.href = "/manage-kategori")}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg text-lg shadow-lg transition-all duration-200 flex items-center gap-2 cursor-pointer"
+          >
+            <span className="text-2xl leading-none">📁</span> Kelola Kategori
+          </button>
+        </div>
+
+        {/* Daftar Kategori Tersimpan */}
+        <div className="bg-white shadow rounded-xl p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4 text-blue-900">
+            Kategori Tersimpan ({stats.totalCategories})
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {categories.length === 0 ? (
+              <div className="col-span-full text-center py-8 text-gray-500">
+                <p>Belum ada kategori yang tersimpan</p>
+              </div>
+            ) : (
+              categories.slice(0, 8).map((category) => (
+                <div
+                  key={category.id}
+                  className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:bg-gray-100 transition-colors cursor-pointer"
+                  onClick={() =>
+                    (window.location.href = `/manage-kategori/${category.id}`)
+                  }
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <span className="text-blue-600 font-bold text-lg">
+                        📁
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900 truncate">
+                        {category.nama_kategori}
+                      </h3>
+                      <p className="text-sm text-gray-500 truncate">
+                        {category.deskripsi || "Tidak ada deskripsi"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {categories.length > 8 && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => (window.location.href = "/manage-kategori")}
+                className="text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Lihat Semua Kategori ({stats.totalCategories}) →
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Daftar Aktivitas Terakhir */}

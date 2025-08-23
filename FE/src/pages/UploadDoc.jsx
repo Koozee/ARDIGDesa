@@ -96,6 +96,9 @@ export default function UploadDoc() {
   const [docType, setDocType] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [categories, setCategories] = useState([]);
+  const [filteredCategories, setFilteredCategories] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
   const [judul, setJudul] = useState("");
   const [nomorSurat, setNomorSurat] = useState("");
   const [tanggalDokumen, setTanggalDokumen] = useState("");
@@ -105,6 +108,7 @@ export default function UploadDoc() {
   const [anggota, setAnggota] = useState([initialMember()]);
   const [metadataItems, setMetadataItems] = useState([{ key: "", value: "" }]);
   const [isScanning, setIsScanning] = useState(false);
+  const [useOCR, setUseOCR] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewType, setPreviewType] = useState("none"); // 'image' | 'pdf' | 'word' | 'other' | 'none'
 
@@ -117,7 +121,10 @@ export default function UploadDoc() {
     );
   };
   const addMetadataItem = () =>
-    setMetadataItems((prev) => [...prev, { key: "", value: "" }]);
+    setMetadataItems((prev) => [
+      ...prev,
+      { jenis_informasi: "", isi_informasi: "" },
+    ]);
   const removeMetadataItem = (index) =>
     setMetadataItems((prev) => prev.filter((_, i) => i !== index));
   const updateMetadataItem = (index, field, value) => {
@@ -141,12 +148,12 @@ export default function UploadDoc() {
     try {
       setError("");
       setSuccess("");
-      if (docType !== "Kartu Keluarga") {
-        setError("Scan OCR hanya untuk dokumen Kartu Keluarga.");
-        return;
-      }
       if (!selectedFile) {
         setError("Silakan pilih file dokumen terlebih dahulu untuk discan.");
+        return;
+      }
+      if (previewType !== "image") {
+        setError("Scan OCR hanya tersedia untuk file gambar (JPG/PNG).");
         return;
       }
       setIsScanning(true);
@@ -155,14 +162,18 @@ export default function UploadDoc() {
       const res = await axiosInstance.post("/documents/scan", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      const meta = res?.data?.data?.metadata || {};
-      const items = Object.entries(meta).map(([key, value]) => ({
-        key,
-        value: String(value ?? ""),
-      }));
-      setMetadataItems(items.length ? items : [{ key: "", value: "" }]);
+      const rincian = res?.data?.data?.rincian_dokumen || {};
+      const items = Object.entries(rincian).map(
+        ([jenis_informasi, isi_informasi]) => ({
+          jenis_informasi,
+          isi_informasi: String(isi_informasi ?? ""),
+        })
+      );
+      setMetadataItems(
+        items.length ? items : [{ jenis_informasi: "", isi_informasi: "" }]
+      );
       setSuccess(
-        "Hasil OCR berhasil dimuat ke metadata. Silakan review/ubah bila perlu."
+        "Hasil OCR berhasil dimuat ke rincian dokumen. Silakan review/ubah bila perlu."
       );
     } catch (e) {
       const msg =
@@ -173,22 +184,55 @@ export default function UploadDoc() {
     }
   };
 
-  // Ambil kategori dari API
+  // Fungsi untuk fetch kategori dari API dengan pagination
+  const fetchCategories = async () => {
+    try {
+      setIsLoadingCategories(true);
+      setError("");
+      // Menggunakan endpoint yang sudah ada pagination, ambil semua kategori dengan limit besar
+      const res = await axiosInstance.get("/category/getcats?page=1&limit=100");
+      // Ambil data dari response yang sudah ada pagination
+      const allCategories = res.data?.categories || [];
+      setCategories(allCategories);
+      // Jangan langsung set filteredCategories, biarkan kosong sampai user focus
+    } catch (err) {
+      setError("Gagal memuat kategori. Silakan coba lagi.");
+    } finally {
+      setIsLoadingCategories(false);
+    }
+  };
+
+  // Ambil kategori dari API dengan pagination
   useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        setIsLoadingCategories(true);
-        setError("");
-        const res = await axiosInstance.get("/category/getcats");
-        setCategories(res.data || []);
-      } catch (err) {
-        setError("Gagal memuat kategori. Silakan coba lagi.");
-      } finally {
-        setIsLoadingCategories(false);
-      }
-    };
     fetchCategories();
   }, []);
+
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      const categoryContainer = document.querySelector(
+        "[data-category-container]"
+      );
+      if (categoryContainer && !categoryContainer.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Sync searchInput with selected category
+  useEffect(() => {
+    if (categoryId) {
+      const selectedCategory = categories.find((cat) => cat.id == categoryId);
+      if (selectedCategory) {
+        setSearchInput(selectedCategory.nama_kategori);
+      }
+    }
+  }, [categoryId, categories]);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0] || null;
@@ -308,15 +352,15 @@ export default function UploadDoc() {
         fd.append("anggota_keluarga", JSON.stringify(anggota));
       }
 
-      // Metadata bebas (key-value)
-      const metaObj = {};
+      // Rincian dokumen bebas (jenis_informasi -> isi_informasi)
+      const rincianObj = {};
       metadataItems.forEach((it) => {
-        const k = String(it.key || "").trim();
-        const v = String(it.value || "").trim();
-        if (k) metaObj[k] = v;
+        const k = String(it.jenis_informasi || "").trim();
+        const v = String(it.isi_informasi || "").trim();
+        if (k) rincianObj[k] = v;
       });
-      if (Object.keys(metaObj).length > 0) {
-        fd.append("metadata", JSON.stringify(metaObj));
+      if (Object.keys(rincianObj).length > 0) {
+        fd.append("rincian_dokumen", JSON.stringify(rincianObj));
       }
 
       await axiosInstance.post("/documents/createdoc", fd, {
@@ -332,7 +376,7 @@ export default function UploadDoc() {
       setJudul("");
       setNomorSurat("");
       setTanggalDokumen("");
-      setMetadataItems([{ key: "", value: "" }]);
+      setMetadataItems([{ jenis_informasi: "", isi_informasi: "" }]);
       setAnggota([initialMember()]);
     } catch (err) {
       const msg = err?.response?.data?.message || "Gagal mengunggah dokumen.";
@@ -420,24 +464,120 @@ export default function UploadDoc() {
                 </option>
               ))}
             </select>
-            <select
-              id="category"
-              className="w-full px-4 py-2 border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 bg-blue-50"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              required
-            >
-              <option value="" disabled>
-                {isLoadingCategories
-                  ? "Memuat kategori..."
-                  : "Pilih kategori..."}
-              </option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.nama_kategori}
-                </option>
-              ))}
-            </select>
+
+            {/* Combobox Kategori - Input + Dropdown */}
+            <div className="w-full relative" data-category-container>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Kategori Dokumen
+              </label>
+
+              {/* Input Text + Dropdown */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder={
+                    isLoadingCategories
+                      ? "Memuat kategori..."
+                      : "Ketik nama kategori atau pilih dari dropdown..."
+                  }
+                  className="w-full px-4 py-2 pr-10 border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 bg-blue-50"
+                  value={searchInput}
+                  onChange={(e) => {
+                    const searchTerm = e.target.value;
+                    setSearchInput(searchTerm);
+
+                    if (searchTerm) {
+                      // Filter kategori berdasarkan nama
+                      const filtered = categories.filter((cat) =>
+                        cat.nama_kategori
+                          .toLowerCase()
+                          .includes(searchTerm.toLowerCase())
+                      );
+                      setFilteredCategories(filtered);
+                      setShowDropdown(true);
+                      // Clear selected category if search doesn't match
+                      if (
+                        !filtered.find(
+                          (cat) => cat.nama_kategori === searchTerm
+                        )
+                      ) {
+                        setCategoryId("");
+                      }
+                    } else {
+                      // Jika search kosong, tampilkan semua kategori
+                      setFilteredCategories(categories);
+                      setShowDropdown(true);
+                      setCategoryId("");
+                    }
+                  }}
+                  onFocus={() => {
+                    // Show dropdown when focused
+                    setFilteredCategories(categories);
+                    setShowDropdown(true);
+                  }}
+                  required
+                />
+
+                {/* Dropdown Arrow */}
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                  <svg
+                    className="w-4 h-4 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M19 9l-7 7-7-7"
+                    ></path>
+                  </svg>
+                </div>
+              </div>
+
+              {/* Dropdown Options */}
+              {showDropdown && filteredCategories.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredCategories.map((cat) => (
+                    <div
+                      key={cat.id}
+                      className={`px-4 py-2 cursor-pointer hover:bg-blue-50 transition-colors ${
+                        categoryId == cat.id
+                          ? "bg-blue-100 text-blue-800 font-medium"
+                          : "text-gray-700"
+                      }`}
+                      onClick={() => {
+                        setCategoryId(cat.id);
+                        setSearchInput(cat.nama_kategori);
+                        setShowDropdown(false); // Hide dropdown
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>{cat.nama_kategori}</span>
+                        {categoryId == cat.id && (
+                          <span className="text-blue-600 text-sm">
+                            ✓ Dipilih
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Pesan jika tidak ada hasil */}
+              {showDropdown &&
+                filteredCategories.length === 0 &&
+                searchInput &&
+                !isLoadingCategories &&
+                categories.length > 0 && (
+                  <div className="text-sm text-orange-600 mt-2">
+                    ⚠️ Tidak ada kategori yang cocok dengan "{searchInput}".
+                    Coba kata kunci lain.
+                  </div>
+                )}
+            </div>
             <label
               htmlFor="file"
               className="w-full flex flex-col items-center px-4 py-6 bg-blue-50 text-blue-700 rounded-lg shadow-md tracking-wide uppercase border border-blue-200 cursor-pointer hover:bg-blue-100 transition-all duration-200"
@@ -472,7 +612,21 @@ export default function UploadDoc() {
                 onChange={handleFileChange}
               />
             </label>
-            {docType === "Kartu Keluarga" && (
+            {/* Opsi Scan OCR */}
+            <div className="w-full flex items-center gap-2">
+              <input
+                id="use-ocr"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={useOCR}
+                onChange={(e) => setUseOCR(e.target.checked)}
+              />
+              <label htmlFor="use-ocr" className="text-sm text-gray-700">
+                Gunakan scan OCR (hanya untuk file gambar)
+              </label>
+            </div>
+
+            {useOCR && selectedFile && previewType === "image" && (
               <button
                 type="button"
                 onClick={handleScanOCR}
@@ -483,9 +637,80 @@ export default function UploadDoc() {
               >
                 {isScanning
                   ? "Memindai (OCR)..."
-                  : "Scan OCR untuk prefill metadata"}
+                  : "Scan OCR untuk prefill rincian dokumen"}
               </button>
             )}
+
+            {/* Rincian Dokumen Section (jenis informasi yang diisi) */}
+            <div className="w-full mt-2">
+              <h2 className="text-lg font-semibold text-gray-800 mb-3 text-left">
+                Rincian Dokumen (opsional - jenis informasi yang diisi)
+              </h2>
+              <div className="overflow-auto border border-blue-100 rounded-lg">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-blue-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Jenis Informasi</th>
+                      <th className="px-3 py-2 text-left">Isi Informasi</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metadataItems.map((it, idx) => (
+                      <tr key={idx} className="border-t">
+                        <td className="px-3 py-2">
+                          <input
+                            className="w-56 px-2 py-1 border rounded"
+                            value={it.jenis_informasi}
+                            onChange={(e) =>
+                              updateMetadataItem(
+                                idx,
+                                "jenis_informasi",
+                                e.target.value
+                              )
+                            }
+                            placeholder="contoh: Perihal"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            className="w-full px-2 py-1 border rounded"
+                            value={it.isi_informasi}
+                            onChange={(e) =>
+                              updateMetadataItem(
+                                idx,
+                                "isi_informasi",
+                                e.target.value
+                              )
+                            }
+                            placeholder="contoh: Surat Keterangan"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button
+                            type="button"
+                            className="text-red-600 hover:underline"
+                            onClick={() => removeMetadataItem(idx)}
+                            disabled={metadataItems.length === 1}
+                          >
+                            Hapus
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 w-full text-left">
+                <button
+                  type="button"
+                  onClick={addMetadataItem}
+                  className="bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200 cursor-pointer"
+                >
+                  + Tambah Rincian Dokumen
+                </button>
+              </div>
+            </div>
             {(selectedFile || docType) && (
               <div className="text-sm text-gray-700 text-center">
                 {docType && (
@@ -502,7 +727,6 @@ export default function UploadDoc() {
                 )}
               </div>
             )}
-            {/* Preview file terunggah (dipindah di atas metadata) */}
             {selectedFile && previewType !== "none" && (
               <div className="w-full mt-3 border rounded-lg p-3 bg-gray-50">
                 <div className="flex items-center justify-between mb-2">
@@ -517,14 +741,14 @@ export default function UploadDoc() {
                   <img
                     src={previewUrl}
                     alt="Preview"
-                    className="w-full max-h-101 rounded border"
+                    className="w-full rounded border"
                   />
                 )}
                 {previewType === "pdf" && (
                   <iframe
                     title="PDF Preview"
                     src={previewUrl}
-                    className="w-full h-96 border rounded"
+                    className="w-full h-101 border rounded"
                   />
                 )}
                 {previewType === "word" && (
@@ -556,68 +780,6 @@ export default function UploadDoc() {
                 )}
               </div>
             )}
-            {/* Metadata Section (bebas key-value) */}
-            <div className="w-full mt-2">
-              <h2 className="text-lg font-semibold text-gray-800 mb-3 text-left">
-                Metadata (opsional - key/value)
-              </h2>
-              <div className="overflow-auto border border-blue-100 rounded-lg">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-blue-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Key</th>
-                      <th className="px-3 py-2 text-left">Value</th>
-                      <th className="px-3 py-2" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {metadataItems.map((it, idx) => (
-                      <tr key={idx} className="border-t">
-                        <td className="px-3 py-2">
-                          <input
-                            className="w-56 px-2 py-1 border rounded"
-                            value={it.key}
-                            onChange={(e) =>
-                              updateMetadataItem(idx, "key", e.target.value)
-                            }
-                            placeholder="contoh: nomor_kk"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            className="w-full px-2 py-1 border rounded"
-                            value={it.value}
-                            onChange={(e) =>
-                              updateMetadataItem(idx, "value", e.target.value)
-                            }
-                            placeholder="contoh: 3507... atau teks lain"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button
-                            type="button"
-                            className="text-red-600 hover:underline"
-                            onClick={() => removeMetadataItem(idx)}
-                            disabled={metadataItems.length === 1}
-                          >
-                            Hapus
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-3 w-full text-left">
-                <button
-                  type="button"
-                  onClick={addMetadataItem}
-                  className="bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200"
-                >
-                  + Tambah Metadata
-                </button>
-              </div>
-            </div>
             {docType === "Kartu Keluarga" && (
               <div className="w-full mt-4">
                 <h2 className="text-lg font-semibold text-gray-800 mb-3 text-left">

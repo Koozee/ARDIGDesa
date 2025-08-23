@@ -1,4 +1,3 @@
-// models/familyMember.js
 const { DataTypes, Model } = require("sequelize");
 const sequelize = require("../config/database");
 
@@ -55,7 +54,7 @@ FamilyMember.init(
     sequelize,
     modelName: "FamilyMember",
     tableName: "family_members",
-    timestamps: false, // Biasanya data anggota keluarga tidak perlu createdAt/updatedAt
+    timestamps: false,
   }
 );
 

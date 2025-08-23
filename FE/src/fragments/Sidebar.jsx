@@ -8,6 +8,7 @@ import {
   BsPersonFillGear,
 } from "react-icons/bs";
 import { useAuth } from "@/hooks/useAuth";
+import Logo from "@/assets/logopurwosekar.png";
 
 export default function Sidebar({ isExpanded, setIsExpanded }) {
   const location = useLocation();
@@ -21,7 +22,7 @@ export default function Sidebar({ isExpanded, setIsExpanded }) {
     >
       <div className="flex items-center gap-2 relative">
         <img
-          src="/logo.png"
+          src={Logo}
           alt="Logo"
           className="w-12 h-12 2xl:w-16 2xl:h-16"
         />

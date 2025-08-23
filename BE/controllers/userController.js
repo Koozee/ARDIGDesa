@@ -8,7 +8,7 @@ const userController = {
   createUser: async (req, res) => {
     const t = await sequelize.transaction();
     try {
-      let { username, password, nama_lengkap, jabatan } = req.body;
+      let { username, password, nama_lengkap, jabatan, nomor_telepon } = req.body;
 
       const newUser = await User.create(
         {
@@ -16,6 +16,7 @@ const userController = {
           password,
           nama_lengkap,
           jabatan,
+          nomor_telepon,
         },
         { transaction: t }
       );
@@ -30,6 +31,7 @@ const userController = {
           username: newUser.username,
           nama_lengkap: newUser.nama_lengkap,
           jabatan: newUser.jabatan,
+          nomor_telepon: newUser.nomor_telepon,
           createdAt: newUser.createdAt,
         },
       });

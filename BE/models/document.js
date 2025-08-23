@@ -21,14 +21,14 @@ Document.init({
     allowNull: true
   },
   tanggal_dokumen: {
-    type: DataTypes.DATEONLY // Hanya menyimpan tanggal, tanpa waktu
+    type: DataTypes.DATEONLY
   },
   path_file: {
     type: DataTypes.STRING,
     allowNull: false
   },
-  metadata: {
-    type: DataTypes.JSON // Sequelize akan otomatis handle JSON
+  rincian_dokumen: {
+    type: DataTypes.JSON
   }
 }, {
   sequelize,

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import Sidebar from "@/fragments/Sidebar";
 import DashboardLayout from "@/layouts/dashboard";
 import { BsBoxSeamFill } from "react-icons/bs";
-import { useNavigate } from "react-router-dom";
+import { BsSearch, BsChevronLeft, BsChevronRight } from "react-icons/bs";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { axiosInstance } from "@/utils/axios";
 import toast from "react-hot-toast";
 import DeleteDialog from "@/fragments/DeleteDialog.jsx";
@@ -23,15 +24,53 @@ export default function ManageCat() {
   const [categoryToDelete, setCategoryToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Search and pagination states from URL params
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageSize] = useState(10);
+
+  // Get values from URL params
+  const searchTerm = searchParams.get("search") || "";
+  const currentPage = parseInt(searchParams.get("page")) || 1;
+
+  // Local state for search input (not synced with URL until search is submitted)
+  const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm);
+
   const navigate = useNavigate();
 
-  // Fetch categories from database
-  const fetchCategories = async () => {
+  // Update URL params
+  const updateURLParams = (newParams) => {
+    const current = Object.fromEntries(searchParams.entries());
+    const updated = { ...current, ...newParams };
+
+    // Remove empty values
+    Object.keys(updated).forEach((key) => {
+      if (!updated[key] || updated[key] === "1") {
+        delete updated[key];
+      }
+    });
+
+    setSearchParams(updated);
+  };
+
+  // Fetch categories from database with search and pagination
+  const fetchCategories = async (page = 1, search = "") => {
     try {
       setLoading(true);
       setError(null);
-      const response = await axiosInstance.get("/category/getcats");
-      setCategories(response.data);
+
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: pageSize.toString(),
+        ...(search && { search: search.trim() }),
+      });
+
+      const response = await axiosInstance.get(`/category/getcats?${params}`);
+
+      setCategories(response.data.categories);
+      setTotalPages(response.data.pagination.totalPages);
+      setTotalCount(response.data.pagination.totalCount);
     } catch (err) {
       console.error("Error fetching categories:", err);
       const errorMessage =
@@ -43,10 +82,48 @@ export default function ManageCat() {
     }
   };
 
-  // Load categories on component mount
+  // Load categories on component mount and when URL params change
   useEffect(() => {
-    fetchCategories();
+    fetchCategories(currentPage, searchTerm);
+  }, [currentPage, searchTerm]);
+
+  // Sync URL params on mount if they don't exist
+  useEffect(() => {
+    if (!searchParams.get("page") && !searchParams.get("search")) {
+      // Set default page to 1 if no params exist
+      setSearchParams({ page: "1" });
+    }
   }, []);
+
+  // Sync localSearchTerm with searchTerm from URL params
+  useEffect(() => {
+    setLocalSearchTerm(searchTerm);
+  }, [searchTerm]);
+
+  // Handle search
+  const handleSearch = (e) => {
+    e.preventDefault();
+    updateURLParams({ search: localSearchTerm.trim(), page: "1" });
+  };
+
+  // Handle page change
+  const handlePageChange = (page) => {
+    updateURLParams({ page: page.toString() });
+  };
+
+  // Handle search input change - only update local state, not URL
+  const handleSearchChange = (e) => {
+    setLocalSearchTerm(e.target.value);
+  };
+
+  // Clear search
+  const handleClearSearch = () => {
+    setLocalSearchTerm("");
+    updateURLParams({ search: "", page: "1" });
+  };
+
+  // Check if search is in progress (removed debounced search)
+  const isSearching = false;
 
   const handleAddCategory = async (e) => {
     e.preventDefault();
@@ -61,7 +138,7 @@ export default function ManageCat() {
       });
 
       // Refresh the categories list
-      await fetchCategories();
+      await fetchCategories(currentPage, searchTerm);
       setNewCategory("");
       setNewDescription("");
       setShowForm(false);
@@ -87,7 +164,7 @@ export default function ManageCat() {
     try {
       setIsDeleting(true);
       await axiosInstance.delete(`/category/deletecat/${categoryToDelete.id}`);
-      await fetchCategories();
+      await fetchCategories(currentPage, searchTerm);
       setShowDeleteModal(false);
       setCategoryToDelete(null);
       toast.success("Kategori berhasil dihapus!");
@@ -124,7 +201,7 @@ export default function ManageCat() {
         deskripsi: editCategoryDescription,
       });
 
-      await fetchCategories();
+      await fetchCategories(currentPage, searchTerm);
       setEditCategoryId(null);
       setEditCategoryName("");
       setEditCategoryDescription("");
@@ -157,11 +234,34 @@ export default function ManageCat() {
 
   return (
     <main className="flex min-h-screen">
-    <TopNavbarDashboard />
+      <TopNavbarDashboard />
       <Sidebar isExpanded={isExpanded} setIsExpanded={setIsExpanded} />
       <DashboardLayout isExpanded={isExpanded}>
         <div className="p-6 w-full">
           <h1 className="text-2xl font-bold mb-6">Manajemen Kategori Arsip</h1>
+
+          {/* Current Filters Info */}
+          {(searchTerm || currentPage > 1) && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="text-sm text-blue-800">
+                <span className="font-medium">Filter Aktif:</span>
+                {searchTerm && (
+                  <span className="ml-2 inline-flex items-center gap-1">
+                    <BsSearch size={12} />"{searchTerm}"
+                  </span>
+                )}
+                {currentPage > 1 && (
+                  <span className="ml-2">Halaman {currentPage}</span>
+                )}
+                <button
+                  onClick={() => updateURLParams({ search: "", page: "1" })}
+                  className="ml-3 text-blue-600 hover:text-blue-800 underline text-xs"
+                >
+                  Reset Semua Filter
+                </button>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -175,6 +275,47 @@ export default function ManageCat() {
           >
             + Tambah Kategori Baru
           </button>
+
+          {/* Search Bar */}
+          <div className="mb-6">
+            <form onSubmit={handleSearch} className="flex gap-2 max-w-md">
+              <div className="relative flex-1">
+                <BsSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Ketik nama kategori, lalu tekan Enter atau klik Cari"
+                  value={localSearchTerm}
+                  onChange={handleSearchChange}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Cari
+              </button>
+              {localSearchTerm && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Reset
+                </button>
+              )}
+            </form>
+
+            {/* Search Status Indicator */}
+            {searchTerm && (
+              <div className="mt-2 text-sm text-gray-600">
+                <span className="inline-flex items-center gap-1">
+                  <BsSearch size={14} />
+                  Mencari: "{searchTerm}"
+                </span>
+              </div>
+            )}
+          </div>
 
           {showForm && (
             <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
@@ -280,7 +421,9 @@ export default function ManageCat() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-4">
             {categories.length === 0 ? (
               <div className="col-span-2 text-center py-8 text-gray-500">
-                Belum ada kategori yang tersedia
+                {searchTerm
+                  ? `Tidak ada kategori yang ditemukan untuk "${searchTerm}"`
+                  : "Belum ada kategori yang tersedia"}
               </div>
             ) : (
               categories.map((cat) => (
@@ -324,6 +467,82 @@ export default function ManageCat() {
               ))
             )}
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="mt-8 flex items-center justify-between">
+              <div className="text-sm text-gray-700">
+                Menampilkan {(currentPage - 1) * pageSize + 1} -{" "}
+                {Math.min(currentPage * pageSize, totalCount)} dari {totalCount}{" "}
+                kategori
+                {searchTerm && (
+                  <span className="ml-2 text-blue-600">
+                    (Filter: "{searchTerm}")
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Previous Page Button */}
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className={`px-3 py-2 rounded-lg flex items-center gap-1 transition-colors ${
+                    currentPage === 1
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <BsChevronLeft size={16} />
+                  Sebelumnya
+                </button>
+
+                {/* Page Numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        className={`px-3 py-2 rounded-lg transition-colors ${
+                          pageNum === currentPage
+                            ? "bg-blue-600 text-white"
+                            : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Next Page Button */}
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className={`px-3 py-2 rounded-lg flex items-center gap-1 transition-colors ${
+                    currentPage === totalPages
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  Selanjutnya
+                  <BsChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </DashboardLayout>
     </main>

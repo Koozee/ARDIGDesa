@@ -1,5 +1,6 @@
 const sequelize = require("../config/database");
 const { Category, User, Document } = require("../models");
+const { Op } = require("sequelize");
 
 const categoryController = {
   createCategory: async (req, res) => {
@@ -33,14 +34,50 @@ const categoryController = {
     }
   },
 
-  // 2. READ: Mengambil semua kategori
+  // 2. READ: Mengambil semua kategori dengan search dan pagination
   getAllCategory: async (req, res) => {
     try {
+      const { 
+        page = 1, 
+        limit = 10, 
+        search = "" 
+      } = req.query;
+
+      const offset = (page - 1) * limit;
+      const pageSize = parseInt(limit);
+
+      // Build where clause for search
+      const whereClause = {};
+      if (search && search.trim() !== "") {
+        whereClause.nama_kategori = {
+          [Op.like]: `%${search.trim()}%`
+        };
+      }
+
+      // Get total count for pagination
+      const totalCount = await Category.count({ where: whereClause });
+      const totalPages = Math.ceil(totalCount / pageSize);
+
+      // Get categories with pagination and search
       const categories = await Category.findAll({
+        where: whereClause,
         order: [["createdAt", "DESC"]],
         include: [{ model: User, attributes: ["id", "nama_lengkap"] }],
+        limit: pageSize,
+        offset: offset,
       });
-      res.status(200).json(categories);
+
+      res.status(200).json({
+        categories,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalCount,
+          pageSize,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        }
+      });
     } catch (error) {
       res.status(500).json({
         message: "Gagal mengambil data kategori",
