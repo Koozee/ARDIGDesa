@@ -4,6 +4,12 @@ import DashboardLayout from "@/layouts/dashboard";
 import { axiosInstance } from "@/utils/axios";
 import { authService } from "@/utils/auth";
 import TopNavbarDashboard from "../fragments/Topnavbar";
+import toast from "react-hot-toast";
+import agama from "@/data/agama.json";
+import pendidikan from "@/data/pendidikan.json";
+import pekerjaan from "@/data/pekerjaan.json";
+import status from "@/data/status.json";
+import statushubungan from "@/data/statushubungan.json";
 
 const DOC_TYPES = [
   { value: "", label: "Pilih jenis dokumen...", defaultCategoryId: "" },
@@ -102,8 +108,7 @@ export default function UploadDoc() {
   const [judul, setJudul] = useState("");
   const [nomorSurat, setNomorSurat] = useState("");
   const [tanggalDokumen, setTanggalDokumen] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [anggota, setAnggota] = useState([initialMember()]);
   const [metadataItems, setMetadataItems] = useState([{ key: "", value: "" }]);
@@ -145,24 +150,69 @@ export default function UploadDoc() {
   };
 
   const handleScanOCR = async () => {
+    let loadingToast = null;
     try {
-      setError("");
-      setSuccess("");
       if (!selectedFile) {
-        setError("Silakan pilih file dokumen terlebih dahulu untuk discan.");
+        toast.error("Silakan pilih file dokumen terlebih dahulu untuk discan.");
         return;
       }
       if (previewType !== "image") {
-        setError("Scan OCR hanya tersedia untuk file gambar (JPG/PNG).");
+        toast.error("Scan OCR hanya tersedia untuk file gambar (JPG/PNG).");
+        return;
+      }
+      if (!docType) {
+        toast.error(
+          "Silakan pilih jenis dokumen terlebih dahulu untuk scan OCR."
+        );
+        return;
+      }
+      // Validasi ukuran file untuk OCR
+      if (selectedFile.size > 5 * 1024 * 1024) {
+        toast.error("Ukuran file terlalu besar untuk OCR! Maksimal 5MB.");
         return;
       }
       setIsScanning(true);
+      loadingToast = toast.loading("Memindai dokumen dengan OCR...");
       const fd = new FormData();
       fd.append("documentFile", selectedFile);
+      fd.append("docType", docType);
       const res = await axiosInstance.post("/documents/scan", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       const rincian = res?.data?.data?.rincian_dokumen || {};
+
+      // Auto-fill berdasarkan jenis dokumen yang dipilih
+      if (docType === "Kartu Tanda Penduduk" && rincian.nama_lengkap) {
+        setAnggota([
+          {
+            nik: rincian.nik || "",
+            nama_lengkap: rincian.nama_lengkap || "",
+            tempat_lahir: rincian.tempat_lahir || "",
+            tanggal_lahir: rincian.tanggal_lahir || "",
+            jenis_kelamin: rincian.jenis_kelamin || "",
+            status_hubungan: "Kepala Keluarga",
+            pendidikan_akhir: "",
+            agama: rincian.agama || "",
+            status: rincian.status_perkawinan || "",
+            pekerjaan: rincian.pekerjaan || "",
+            nama_ayah: "",
+            nama_ibu: "",
+          },
+        ]);
+
+        // Set judul dokumen otomatis
+        if (!judul) {
+          setJudul(`KTP - ${rincian.nama_lengkap}`);
+        }
+      }
+
+      if (docType === "Kartu Keluarga" && rincian.nomorkk) {
+        // Set judul dokumen otomatis
+        if (!judul) {
+          setJudul(`KK - ${rincian.nomorkk}`);
+        }
+      }
+
       const items = Object.entries(rincian).map(
         ([jenis_informasi, isi_informasi]) => ({
           jenis_informasi,
@@ -172,13 +222,21 @@ export default function UploadDoc() {
       setMetadataItems(
         items.length ? items : [{ jenis_informasi: "", isi_informasi: "" }]
       );
-      setSuccess(
-        "Hasil OCR berhasil dimuat ke rincian dokumen. Silakan review/ubah bila perlu."
+
+      toast.dismiss(loadingToast);
+      toast.success(
+        "Hasil OCR berhasil dimuat! Silakan review/ubah bila perlu."
       );
     } catch (e) {
+      console.log("OCR Error:", e);
+      console.log("OCR Error Response:", e?.response);
+      console.log("OCR Error Data:", e?.response?.data);
       const msg =
         e?.response?.data?.message || "Gagal melakukan OCR. Coba lagi.";
-      setError(msg);
+      if (loadingToast) {
+        toast.dismiss(loadingToast);
+      }
+      toast.error(msg);
     } finally {
       setIsScanning(false);
     }
@@ -186,17 +244,22 @@ export default function UploadDoc() {
 
   // Fungsi untuk fetch kategori dari API dengan pagination
   const fetchCategories = async () => {
+    let loadingToast = null;
     try {
       setIsLoadingCategories(true);
-      setError("");
+      loadingToast = toast.loading("Memuat kategori...");
       // Menggunakan endpoint yang sudah ada pagination, ambil semua kategori dengan limit besar
       const res = await axiosInstance.get("/category/getcats?page=1&limit=100");
       // Ambil data dari response yang sudah ada pagination
       const allCategories = res.data?.categories || [];
       setCategories(allCategories);
       // Jangan langsung set filteredCategories, biarkan kosong sampai user focus
+      toast.dismiss(loadingToast);
     } catch (err) {
-      setError("Gagal memuat kategori. Silakan coba lagi.");
+      if (loadingToast) {
+        toast.dismiss(loadingToast);
+      }
+      toast.error("Gagal memuat kategori. Silakan coba lagi.");
     } finally {
       setIsLoadingCategories(false);
     }
@@ -236,9 +299,15 @@ export default function UploadDoc() {
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0] || null;
+
+    // Validasi ukuran file di frontend (5MB)
+    if (file && file.size > 5 * 1024 * 1024) {
+      toast.error("Ukuran file terlalu besar! Maksimal 5MB.");
+      e.target.value = null; // Reset input file
+      return;
+    }
+
     setSelectedFile(file);
-    setError("");
-    setSuccess("");
     // Reset preview
     if (previewUrl) {
       try {
@@ -302,35 +371,35 @@ export default function UploadDoc() {
       );
       setCategoryId(matched ? String(matched.id) : "");
     }
-
-    setError("");
-    setSuccess("");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!docType) {
-      setError("Silakan pilih jenis dokumen.");
-      setSuccess("");
+      toast.error("Silakan pilih jenis dokumen.");
       return;
     }
     if (!selectedFile) {
-      setError("Silakan pilih file dokumen.");
-      setSuccess("");
+      toast.error("Silakan pilih file dokumen.");
       return;
     }
     if (!judul.trim()) {
-      setError("Judul dokumen wajib diisi.");
-      setSuccess("");
+      toast.error("Judul dokumen wajib diisi.");
       return;
     }
     if (!categoryId) {
-      setError("Silakan pilih kategori dokumen.");
-      setSuccess("");
+      toast.error("Silakan pilih kategori dokumen.");
+      return;
+    }
+    // Validasi ukuran file untuk upload
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      toast.error("Ukuran file terlalu besar untuk upload! Maksimal 5MB.");
       return;
     }
 
+    let loadingToast = null;
     try {
+      loadingToast = toast.loading("Mengunggah dokumen...");
       const fd = new FormData();
       fd.append("documentFile", selectedFile);
       fd.append("judul", judul);
@@ -345,8 +414,7 @@ export default function UploadDoc() {
       if (docType === "Kartu Keluarga") {
         const memberErr = validateMembers();
         if (memberErr) {
-          setError(memberErr);
-          setSuccess("");
+          toast.error(memberErr);
           return;
         }
         fd.append("anggota_keluarga", JSON.stringify(anggota));
@@ -367,8 +435,8 @@ export default function UploadDoc() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      setSuccess("Dokumen berhasil diunggah!");
-      setError("");
+      toast.dismiss(loadingToast);
+      toast.success("Dokumen berhasil diunggah!");
       // Reset form
       setSelectedFile(null);
       setDocType("");
@@ -379,9 +447,14 @@ export default function UploadDoc() {
       setMetadataItems([{ jenis_informasi: "", isi_informasi: "" }]);
       setAnggota([initialMember()]);
     } catch (err) {
+      console.log("Upload Error:", err);
+      console.log("Upload Error Response:", err?.response);
+      console.log("Upload Error Data:", err?.response?.data);
       const msg = err?.response?.data?.message || "Gagal mengunggah dokumen.";
-      setError(msg);
-      setSuccess("");
+      if (loadingToast) {
+        toast.dismiss(loadingToast);
+      }
+      toast.error(msg);
     }
   };
 
@@ -622,7 +695,7 @@ export default function UploadDoc() {
                 onChange={(e) => setUseOCR(e.target.checked)}
               />
               <label htmlFor="use-ocr" className="text-sm text-gray-700">
-                Gunakan scan OCR (hanya untuk file gambar)
+                Gunakan scan OCR (pilih jenis dokumen terlebih dahulu)
               </label>
             </div>
 
@@ -637,7 +710,7 @@ export default function UploadDoc() {
               >
                 {isScanning
                   ? "Memindai (OCR)..."
-                  : "Scan OCR untuk prefill rincian dokumen"}
+                  : "Scan OCR berdasarkan jenis dokumen yang dipilih"}
               </button>
             )}
 
@@ -782,9 +855,11 @@ export default function UploadDoc() {
             )}
             {docType === "Kartu Keluarga" && (
               <div className="w-full mt-4">
-                <h2 className="text-lg font-semibold text-gray-800 mb-3 text-left">
-                  Anggota Keluarga
-                </h2>
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="text-lg font-semibold text-gray-800 text-left">
+                    Anggota Keluarga
+                  </h2>
+                </div>
                 <div className="overflow-auto border border-blue-100 rounded-lg">
                   <table className="min-w-full text-sm">
                     <thead className="bg-blue-50">
@@ -877,8 +952,8 @@ export default function UploadDoc() {
                             </select>
                           </td>
                           <td className="px-3 py-2">
-                            <input
-                              className="w-44 px-2 py-1 border rounded"
+                            <select
+                              className="w-44 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
                               value={m.status_hubungan}
                               onChange={(e) =>
                                 updateMember(
@@ -887,12 +962,18 @@ export default function UploadDoc() {
                                   e.target.value
                                 )
                               }
-                              placeholder="Kepala Keluarga/Anak/Istri/..."
-                            />
+                            >
+                              <option value="">Pilih Status Hubungan</option>
+                              {statushubungan.map((status) => (
+                                <option key={status.id} value={status.nama}>
+                                  {status.nama}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-3 py-2">
-                            <input
-                              className="w-40 px-2 py-1 border rounded"
+                            <select
+                              className="w-40 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
                               value={m.pendidikan_akhir}
                               onChange={(e) =>
                                 updateMember(
@@ -901,34 +982,62 @@ export default function UploadDoc() {
                                   e.target.value
                                 )
                               }
-                            />
+                            >
+                              <option value="">Pilih Pendidikan</option>
+                              {pendidikan.map((pend) => (
+                                <option key={pend.id} value={pend.nama}>
+                                  {pend.nama}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-3 py-2">
-                            <input
-                              className="w-36 px-2 py-1 border rounded"
+                            <select
+                              className="w-36 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
                               value={m.agama}
                               onChange={(e) =>
                                 updateMember(idx, "agama", e.target.value)
                               }
-                            />
+                            >
+                              <option value="">Pilih Agama</option>
+                              {agama.map((ag) => (
+                                <option key={ag.id} value={ag.nama}>
+                                  {ag.nama}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-3 py-2">
-                            <input
-                              className="w-28 px-2 py-1 border rounded"
+                            <select
+                              className="w-28 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
                               value={m.status}
                               onChange={(e) =>
                                 updateMember(idx, "status", e.target.value)
                               }
-                            />
+                            >
+                              <option value="">Pilih Status</option>
+                              {status.map((stat) => (
+                                <option key={stat.id} value={stat.nama}>
+                                  {stat.nama}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-3 py-2">
-                            <input
-                              className="w-40 px-2 py-1 border rounded"
+                            <select
+                              className="w-40 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
                               value={m.pekerjaan}
                               onChange={(e) =>
                                 updateMember(idx, "pekerjaan", e.target.value)
                               }
-                            />
+                            >
+                              <option value="">Pilih Pekerjaan</option>
+                              {pekerjaan.map((pek) => (
+                                <option key={pek.id} value={pek.nama}>
+                                  {pek.nama}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-3 py-2">
                             <input
@@ -974,16 +1083,7 @@ export default function UploadDoc() {
                 </div>
               </div>
             )}
-            {error && (
-              <div className="text-red-500 text-sm text-center w-full">
-                {error}
-              </div>
-            )}
-            {success && (
-              <div className="text-green-600 text-sm text-center w-full">
-                {success}
-              </div>
-            )}
+
             <button
               type="submit"
               className={`bg-blue-500 hover:bg-blue-600 transition-all duration-200 text-white px-6 py-2 rounded-md font-semibold shadow-md w-full cursor-pointer ${

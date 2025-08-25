@@ -55,14 +55,16 @@ const parseKKData = (text) => {
         }
       }
     }
-    if (nomorKK) extractedData.rincian_dokumen.nomor_kk = nomorKK;
+    if (nomorKK) extractedData.rincian_dokumen.nomorkk = nomorKK;
 
     const alamatMatch = text.match(alamatRegex);
-    if (alamatMatch) extractedData.rincian_dokumen.alamat = alamatMatch[1].trim();
+    if (alamatMatch)
+      extractedData.rincian_dokumen.alamat = alamatMatch[1].trim();
 
     // Ekstraksi Desa/Kelurahan dan Kecamatan
     const desaMatch = text.match(desaRegex);
-    if (desaMatch) extractedData.rincian_dokumen.desa_kelurahan = desaMatch[1].trim();
+    if (desaMatch)
+      extractedData.rincian_dokumen.kelurahan = desaMatch[1].trim();
 
     const kecamatanMatch = text.match(kecamatanRegex);
     if (kecamatanMatch)
@@ -74,6 +76,247 @@ const parseKKData = (text) => {
   return extractedData;
 };
 
+// Helper function untuk parsing teks mentah dari OCR KTP
+const parseKTPData = (text) => {
+  const extractedData = {
+    rincian_dokumen: {},
+    anggota_keluarga: [],
+  };
+
+  try {
+    // NIK (16 digit) - lebih robust
+    const nikRegex = /NIK\s*:?\s*([0-9]{16})/i;
+
+    // Nama Lengkap - lebih robust
+    const namaRegex = /Nama\s*:?\s*([A-Z\s]+)/i;
+
+    // Tempat/Tanggal Lahir - lebih robust untuk variasi OCR
+    const ttlRegex = /(?:TempayTgi|Tempat\/Tgl|TTL)\s+Lahir\s*:?\s*([^,]+),\s*([0-9]{1,2}\s*[-/]\s*[0-9]{1,2}\s*[-/]\s*[0-9]{4})/i;
+
+    // Jenis Kelamin - lebih robust
+    const jkRegex = /(?:Jenis\s+Kelamin|JK)\s*:?\s*(LAKI-LAKI|PEREMPUAN|L|P)/i;
+
+    // Alamat - lebih robust
+    const alamatRegex = /(?:Alamat|Alm)\s*:?\s*([^\n\r]+)/i;
+
+    // RT/RW - lebih robust
+    const rtRwRegex = /(?:RT\/RW|RT|RW)\s*:?\s*([0-9]{1,3}\/?[0-9]{1,3})/i;
+
+    // Kelurahan/Desa - lebih robust
+    const kelurahanRegex = /(?:Kel\/Desa|Kelurahan|Desa)\s*:?\s*([^\n\r]+)/i;
+
+    // Kecamatan - lebih robust
+    const kecamatanRegex = /(?:Kecamatan|Kec)\s*:?\s*([^\n\r]+)/i;
+
+    // Agama - lebih robust
+    const agamaRegex = /Agama\s*:?\s*([^\n\r]+)/i;
+
+    // Status Perkawinan - lebih robust
+    const statusRegex = /(?:Status\s+Perkawinan|Status)\s*:?\s*([^\n\r]+)/i;
+
+    // Pekerjaan - lebih robust
+    const pekerjaanRegex = /(?:Pekerjaan|Pkj)\s*:?\s*([^\n\r]+)/i;
+
+    // Kewarganegaraan - lebih robust
+    const wargaRegex = /(?:Kewarganegaraan|WN)\s*:?\s*([^\n\r]+)/i;
+
+    // Berlaku Hingga - lebih robust
+    const berlakuRegex = /(?:Berlaku\s+Hingga|Berlaku)\s*:?\s*([^\n\r]+)/i;
+
+    // Ekstraksi data dengan logging detail
+    const nikMatch = text.match(nikRegex);
+    if (nikMatch) {
+      extractedData.rincian_dokumen.nik = nikMatch[1];
+      console.log("✅ NIK ditemukan:", nikMatch[1]);
+    } else {
+      console.log("❌ NIK tidak ditemukan");
+    }
+
+    const namaMatch = text.match(namaRegex);
+    if (namaMatch) {
+      const nama = namaMatch[1].trim();
+      if (!nama.includes("PROVINSI") && !nama.includes("KABUPATEN") && !nama.includes("NIK")) {
+        extractedData.rincian_dokumen.nama_lengkap = nama;
+        console.log("✅ Nama ditemukan:", nama);
+      } else {
+        console.log("❌ Nama tidak valid (mengandung kata kunci lain):", nama);
+      }
+    } else {
+      console.log("❌ Nama tidak ditemukan");
+    }
+
+    const ttlMatch = text.match(ttlRegex);
+    if (ttlMatch) {
+      const tempatLahir = ttlMatch[1].trim();
+      const tanggalLahir = ttlMatch[2].trim();
+      if (!tempatLahir.includes("PROVINSI") && !tempatLahir.includes("KABUPATEN") && !tempatLahir.includes("NIK")) {
+        extractedData.rincian_dokumen.tempat_lahir = tempatLahir;
+        extractedData.rincian_dokumen.tanggal_lahir = tanggalLahir;
+        console.log("✅ TTL ditemukan:", tempatLahir, tanggalLahir);
+      } else {
+        console.log("❌ TTL tidak valid (tempat lahir mengandung kata kunci lain):", tempatLahir);
+      }
+    } else {
+      console.log("❌ TTL tidak ditemukan");
+    }
+
+    const jkMatch = text.match(jkRegex);
+    if (jkMatch) {
+      extractedData.rincian_dokumen.jenis_kelamin = jkMatch[1];
+      console.log("✅ Jenis Kelamin ditemukan:", jkMatch[1]);
+    } else {
+      console.log("❌ Jenis Kelamin tidak ditemukan");
+    }
+
+    const alamatMatch = text.match(alamatRegex);
+    if (alamatMatch) {
+      const alamat = alamatMatch[1].trim();
+      // Validasi: alamat tidak boleh mengandung kata kunci lain
+      if (!alamat.includes("PROVINSI") && !alamat.includes("KABUPATEN") && !alamat.includes("NIK")) {
+        extractedData.rincian_dokumen.alamat = alamat;
+        console.log("✅ Alamat ditemukan:", alamat);
+      } else {
+        console.log("❌ Alamat tidak valid (mengandung kata kunci lain):", alamat);
+      }
+    } else {
+      console.log("❌ Alamat tidak ditemukan");
+    }
+
+    const rtRwMatch = text.match(rtRwRegex);
+    if (rtRwMatch) {
+      extractedData.rincian_dokumen.rt_rw = rtRwMatch[1];
+      console.log("✅ RT/RW ditemukan:", rtRwMatch[1]);
+    } else {
+      console.log("❌ RT/RW tidak ditemukan");
+    }
+
+    const kelurahanMatch = text.match(kelurahanRegex);
+    if (kelurahanMatch) {
+      const kelurahan = kelurahanMatch[1].trim();
+      if (!kelurahan.includes("PROVINSI") && !kelurahan.includes("KABUPATEN") && !kelurahan.includes("NIK")) {
+        extractedData.rincian_dokumen.kelurahan = kelurahan;
+        console.log("✅ Kelurahan ditemukan:", kelurahan);
+      } else {
+        console.log("❌ Kelurahan tidak valid (mengandung kata kunci lain):", kelurahan);
+      }
+    } else {
+      console.log("❌ Kelurahan tidak ditemukan");
+    }
+
+    const kecamatanMatch = text.match(kecamatanRegex);
+    if (kecamatanMatch) {
+      const kecamatan = kecamatanMatch[1].trim();
+      if (!kecamatan.includes("PROVINSI") && !kecamatan.includes("KABUPATEN") && !kecamatan.includes("NIK")) {
+        extractedData.rincian_dokumen.kecamatan = kecamatan;
+        console.log("✅ Kecamatan ditemukan:", kecamatan);
+      } else {
+        console.log("❌ Kecamatan tidak valid (mengandung kata kunci lain):", kecamatan);
+      }
+    } else {
+      console.log("❌ Kecamatan tidak ditemukan");
+    }
+
+    const agamaMatch = text.match(agamaRegex);
+    if (agamaMatch) {
+      const agama = agamaMatch[1].trim();
+      if (!agama.includes("PROVINSI") && !agama.includes("KABUPATEN") && !agama.includes("NIK")) {
+        extractedData.rincian_dokumen.agama = agama;
+        console.log("✅ Agama ditemukan:", agama);
+      } else {
+        console.log("❌ Agama tidak valid (mengandung kata kunci lain):", agama);
+      }
+    } else {
+      console.log("❌ Agama tidak ditemukan");
+    }
+
+    const statusMatch = text.match(statusRegex);
+    if (statusMatch) {
+      const status = statusMatch[1].trim();
+      if (!status.includes("PROVINSI") && !status.includes("KABUPATEN") && !status.includes("NIK")) {
+        extractedData.rincian_dokumen.status_perkawinan = status;
+        console.log("✅ Status Perkawinan ditemukan:", status);
+      } else {
+        console.log("❌ Status Perkawinan tidak valid (mengandung kata kunci lain):", status);
+      }
+    } else {
+      console.log("❌ Status Perkawinan tidak ditemukan");
+    }
+
+    const pekerjaanMatch = text.match(pekerjaanRegex);
+    if (pekerjaanMatch) {
+      const pekerjaan = pekerjaanMatch[1].trim();
+      if (!pekerjaan.includes("PROVINSI") && !pekerjaan.includes("KABUPATEN") && !pekerjaan.includes("NIK")) {
+        extractedData.rincian_dokumen.pekerjaan = pekerjaan;
+        console.log("✅ Pekerjaan ditemukan:", pekerjaan);
+      } else {
+        console.log("❌ Pekerjaan tidak valid (mengandung kata kunci lain):", pekerjaan);
+      }
+    } else {
+      console.log("❌ Pekerjaan tidak ditemukan");
+    }
+
+    const wargaMatch = text.match(wargaRegex);
+    if (wargaMatch) {
+      const warga = wargaMatch[1].trim();
+      if (!warga.includes("PROVINSI") && !warga.includes("KABUPATEN") && !warga.includes("NIK")) {
+        extractedData.rincian_dokumen.kewarganegaraan = warga;
+        console.log("✅ Kewarganegaraan ditemukan:", warga);
+      } else {
+        console.log("❌ Kewarganegaraan tidak valid (mengandung kata kunci lain):", warga);
+      }
+    } else {
+      console.log("❌ Kewarganegaraan tidak ditemukan");
+    }
+
+    const berlakuMatch = text.match(berlakuRegex);
+    if (berlakuMatch) {
+      const berlaku = berlakuMatch[1].trim();
+      if (!berlaku.includes("PROVINSI") && !berlaku.includes("KABUPATEN") && !berlaku.includes("NIK")) {
+        extractedData.rincian_dokumen.berlaku_hingga = berlaku;
+        console.log("✅ Berlaku Hingga ditemukan:", berlaku);
+      } else {
+        console.log("❌ Berlaku Hingga tidak valid (mengandung kata kunci lain):", berlaku);
+      }
+    } else {
+      console.log("❌ Berlaku Hingga tidak ditemukan");
+    }
+  } catch (err) {
+    console.error("Error saat parsing KTP:", err);
+  }
+
+  return extractedData;
+};
+
+// Fungsi parsing untuk dokumen yang tidak dikenal (hanya ekstrak data umum)
+
+// Fungsi parsing untuk dokumen yang tidak dikenal (hanya ekstrak data umum)
+
+
+
+// Fungsi parsing universal berdasarkan jenis dokumen dari frontend
+const parseDocumentData = (text, documentType) => {
+  const extractedData = {
+    rincian_dokumen: {},
+    anggota_keluarga: [],
+  };
+
+  try {
+    // Parsing berdasarkan jenis dokumen dari frontend
+    if (documentType === "Kartu Keluarga") {
+      return parseKKData(text);
+    } else if (documentType === "Kartu Tanda Penduduk") {
+      return parseKTPData(text);
+    } else {
+      // Untuk dokumen lain, kembalikan data kosong
+      console.log("Jenis dokumen tidak didukung untuk parsing:", documentType);
+      return extractedData;
+    }
+  } catch (err) {
+    console.error("Error saat parsing dokumen:", err);
+    return extractedData;
+  }
+};
+
 // Obyek untuk menampung semua fungsi controller
 const documentController = {
   // FUNGSI BARU UNTUK OCR
@@ -81,6 +324,24 @@ const documentController = {
     // Pastikan ada file yang diunggah
     if (!req.file) {
       return res.status(400).json({ message: "Tidak ada file yang diunggah!" });
+    }
+
+    // Validasi ukuran file (maksimal 5MB)
+    const maxFileSize = 5 * 1024 * 1024; // 5MB dalam bytes
+    console.log("OCR - File size:", req.file.size, "Max size:", maxFileSize);
+    if (req.file.size > maxFileSize) {
+      console.log("OCR - File terlalu besar, menghapus file...");
+      // Hapus file yang terlalu besar
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log("OCR - File berhasil dihapus");
+      } catch (err) {
+        console.error("OCR - Gagal menghapus file yang terlalu besar:", err.message);
+      }
+      console.log("OCR - Mengirim error response: Ukuran file terlalu besar");
+      return res.status(400).json({
+        message: "Ukuran file terlalu besar! Maksimal 5MB.",
+      });
     }
 
     const filePath = req.file.path;
@@ -92,17 +353,32 @@ const documentController = {
       const result = await Tesseract.recognize(filePath, "ind"); // 'ind' untuk Bahasa Indonesia
 
       console.log("Teks mentah hasil OCR berhasil didapat.");
+      console.log("Teks mentah:", result.data.text);
 
-      // Mem-parsing teks mentah untuk mendapatkan data terstruktur
-      const extractedData = parseKKData(result.data.text);
-      console.log(extractedData);
+      // Ambil jenis dokumen dari frontend
+      const docType = req.body.docType || "";
+      console.log("Jenis dokumen dari frontend:", docType);
+
+      // Validasi jenis dokumen
+      if (!docType) {
+        return res.status(400).json({ 
+          message: "Jenis dokumen harus dipilih untuk scan OCR." 
+        });
+      }
+
+      // Mem-parsing teks mentah berdasarkan jenis dokumen dari frontend
+      const extractedData = parseDocumentData(result.data.text, docType);
+      console.log("Data hasil parsing:", extractedData);
+
       // Kirim data hasil parsing ke frontend (hanya rincian_dokumen tanpa anggota_keluarga)
       const isDebug =
         String(req.query.debug || "").toLowerCase() === "true" ||
         req.query.debug === "1";
       const responsePayload = {
         message: "File berhasil dipindai!",
-        data: { rincian_dokumen: extractedData.rincian_dokumen },
+        data: {
+          rincian_dokumen: extractedData.rincian_dokumen,
+        },
       };
       if (
         isDebug &&
@@ -134,6 +410,25 @@ const documentController = {
     if (!req.file) {
       return res.status(400).json({ message: "File dokumen wajib diunggah!" });
     }
+
+    // Validasi ukuran file (maksimal 5MB)
+    const maxFileSize = 5 * 1024 * 1024; // 5MB dalam bytes
+    console.log("Upload - File size:", req.file.size, "Max size:", maxFileSize);
+    if (req.file.size > maxFileSize) {
+      console.log("Upload - File terlalu besar, menghapus file...");
+      // Hapus file yang terlalu besar
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log("Upload - File berhasil dihapus");
+      } catch (err) {
+        console.error("Upload - Gagal menghapus file yang terlalu besar:", err.message);
+      }
+      console.log("Upload - Mengirim error response: Ukuran file terlalu besar");
+      return res.status(400).json({
+        message: "Ukuran file terlalu besar! Maksimal 5MB.",
+      });
+    }
+
     try {
       let {
         judul,
@@ -222,7 +517,9 @@ const documentController = {
         whereClause[Op.and].push({ judul: { [Op.like]: `%${searchJudul}%` } });
       }
       if (searchNomor) {
-        whereClause[Op.and].push({ nomor_surat: { [Op.like]: `%${searchNomor}%` } });
+        whereClause[Op.and].push({
+          nomor_surat: { [Op.like]: `%${searchNomor}%` },
+        });
       }
       if (tanggal) {
         whereClause[Op.and].push({ tanggal_dokumen: tanggal });
@@ -377,7 +674,9 @@ const documentController = {
         andConditions.push({ tanggal_dokumen: tanggal });
       }
 
-      const whereClause = andConditions.length ? { [Op.and]: andConditions } : { categoryId };
+      const whereClause = andConditions.length
+        ? { [Op.and]: andConditions }
+        : { categoryId };
 
       const total = await Document.count({ where: whereClause });
       const documents = await Document.findAll({

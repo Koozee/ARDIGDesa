@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import Sidebar from "@/fragments/Sidebar";
 import DashboardLayout from "@/layouts/dashboard";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,6 +10,7 @@ import { BsFileBarGraph, BsFiles, BsFileText, BsPlusSquare } from "react-icons/b
 export default function Dashboard() {
   const [isExpanded, setIsExpanded] = useState(true);
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   // State untuk data dashboard
   const [documents, setDocuments] = useState([]);
@@ -204,57 +206,64 @@ export default function Dashboard() {
               </div>
             ) : (
               categories.slice(0, 8).map((category) => (
-                <div
+                <Link
                   key={category.id}
-                  className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:bg-gray-100 transition-colors cursor-pointer"
-                  onClick={() =>
-                    (window.location.href = `/manage-kategori/${category.id}`)
-                  }
+                  to={`/manage-kategori/${category.id}`}
+                  className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:bg-gray-100 transition-colors cursor-pointer block"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <span className="text-blue-600 font-bold text-lg">
-                        📁
-                      </span>
+                                      <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <span className="text-blue-600 font-bold text-lg">
+                          📁
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-gray-900 truncate">
+                          {category.nama_kategori}
+                        </h3>
+                        <p className="text-sm text-gray-500 truncate">
+                          {category.deskripsi || "Tidak ada deskripsi"}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900 truncate">
-                        {category.nama_kategori}
-                      </h3>
-                      <p className="text-sm text-gray-500 truncate">
-                        {category.deskripsi || "Tidak ada deskripsi"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                  </Link>
               ))
             )}
           </div>
 
           {categories.length > 8 && (
             <div className="mt-4 text-center">
-              <button
-                onClick={() => (window.location.href = "/manage-kategori")}
+              <Link
+                to="/manage-kategori"
                 className="text-blue-600 hover:text-blue-800 font-medium"
               >
                 Lihat Semua Kategori ({stats.totalCategories}) →
-              </button>
+              </Link>
             </div>
           )}
         </div>
 
         {/* Daftar Aktivitas Terakhir */}
         <div className="bg-white shadow rounded-xl p-6">
-          <h2 className="text-xl font-semibold mb-4 text-blue-900">
-            Aktivitas Terakhir
-          </h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-blue-900">
+              Aktivitas Terakhir
+            </h2>
+            <span className="text-sm text-gray-500">
+              Menampilkan 10 dokumen terbaru
+            </span>
+          </div>
           <div className="overflow-x-auto">
             {documents.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <p>Belum ada dokumen yang diunggah</p>
               </div>
             ) : (
-              <table className="min-w-full text-left border border-gray-200 rounded-lg">
+              <>
+                <div className="mb-2 text-sm text-gray-600">
+                  💡 Klik pada baris untuk melihat detail dokumen
+                </div>
+                <table className="min-w-full text-left border border-gray-200 rounded-lg">
                 <thead>
                   <tr className="bg-blue-50">
                     <th className="py-2 px-4 font-semibold">Nama Dokumen</th>
@@ -268,9 +277,19 @@ export default function Dashboard() {
                   {documents.slice(0, 10).map((doc, idx) => (
                     <tr
                       key={doc.id}
-                      className="border-t border-gray-100 hover:bg-blue-50"
+                      className="border-t border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                      onClick={() => {
+                        // Navigasi ke detail dokumen berdasarkan tipe
+                        if (doc.tipe_dokumen === "Kartu Keluarga") {
+                          navigate(`/document/family-member/${doc.id}`);
+                        } else {
+                          navigate(`/document/detail/${doc.id}`);
+                        }
+                      }}
                     >
-                      <td className="py-2 px-4 font-medium">{doc.judul}</td>
+                      <td className="py-2 px-4 font-medium text-blue-600 hover:text-blue-800">
+                        {doc.judul}
+                      </td>
                       <td className="py-2 px-4">
                         {doc.Category?.nama_kategori || "Tidak ada kategori"}
                       </td>
@@ -287,17 +306,18 @@ export default function Dashboard() {
                   ))}
                 </tbody>
               </table>
+              </>
             )}
           </div>
 
           {documents.length > 10 && (
             <div className="mt-4 text-center">
-              <button
-                onClick={() => (window.location.href = "/manage-kategori")}
+              <Link
+                to="/dashboard"
                 className="text-blue-600 hover:text-blue-800 font-medium"
               >
-                Lihat Semua Dokumen →
-              </button>
+                Lihat Semua Dokumen ({stats.totalDocuments}) →
+              </Link>
             </div>
           )}
         </div>

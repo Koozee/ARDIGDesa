@@ -1,0 +1,9 @@
+[
+    { "id": 1, "nama": "BELUM KAWIN" },
+    { "id": 2, "nama": "KAWIN" },
+    { "id": 3, "nama": "KAWIN BELUM TERCATAT" },
+    { "id": 4, "nama": "CERAI HIDUP TERCATAT" },
+    { "id": 5, "nama": "CERAI HIDUP BELUM TERCATAT" },
+    { "id": 6, "nama": "CERAI MATI" }
+  ]
+  
