@@ -6,7 +6,7 @@ const fs = require('fs');
 const fileStorage = multer.diskStorage({
   // Menentukan folder tujuan penyimpanan file
   destination: (req, file, cb) => {
-    const uploadPath = 'archivedata/';
+    const uploadPath = '/var/www/ardig-data/';
     // Membuat folder 'archivedata' jika belum ada
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });

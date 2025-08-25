@@ -117,7 +117,11 @@ export default function UploadDoc() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewType, setPreviewType] = useState("none"); // 'image' | 'pdf' | 'word' | 'other' | 'none'
 
-  const addMember = () => setAnggota((prev) => [...prev, initialMember()]);
+  const addMember = () => {
+    setAnggota((prev) => [...prev, initialMember()]);
+    // Reset validasi NIK untuk anggota baru
+    setNikValidation(prev => ({ ...prev, [anggota.length]: null }));
+  };
   const removeMember = (index) =>
     setAnggota((prev) => prev.filter((_, i) => i !== index));
   const updateMember = (index, field, value) => {
@@ -139,14 +143,73 @@ export default function UploadDoc() {
   };
   const validateMembers = () => {
     if (docType !== "Kartu Keluarga") return "";
+    
+    // Cek NIK duplikat dalam form yang sama
+    const nikList = anggota.map(m => String(m.nik || "").replace(/\D/g, ""));
+    const duplicateNIKs = nikList.filter((nik, index) => 
+      nik.length === 16 && nikList.indexOf(nik) !== index
+    );
+    
+    if (duplicateNIKs.length > 0) {
+      return `NIK ${duplicateNIKs[0]} duplikat dalam form yang sama`;
+    }
+    
+    // Cek apakah ada kepala keluarga
+    const hasKepalaKeluarga = anggota.some(m => 
+      m.status_hubungan === "KEPALA KELUARGA"
+    );
+    
+    if (!hasKepalaKeluarga) {
+      return "Harus ada minimal satu Kepala Keluarga";
+    }
+    
     for (let i = 0; i < anggota.length; i += 1) {
       const m = anggota[i];
       if (!m.nik || String(m.nik).replace(/\D/g, "").length !== 16) {
         return `Baris ${i + 1}: NIK harus 16 digit`;
       }
       if (!m.nama_lengkap) return `Baris ${i + 1}: Nama lengkap wajib`;
+      if (!m.status_hubungan) return `Baris ${i + 1}: Status hubungan wajib`;
+      if (!m.pendidikan_akhir) return `Baris ${i + 1}: Pendidikan wajib`;
+      if (!m.agama) return `Baris ${i + 1}: Agama wajib`;
+      if (!m.status) return `Baris ${i + 1}: Status wajib`;
+      if (!m.pekerjaan) return `Baris ${i + 1}: Pekerjaan wajib`;
     }
     return "";
+  };
+
+  // Fungsi untuk mengecek NIK yang sudah ada
+  const checkExistingNIK = async (nik) => {
+    try {
+      const response = await axiosInstance.get(`/documents/check-nik/${nik}`);
+      return response.data.exists;
+    } catch (error) {
+      console.log("Error checking NIK:", error);
+      return false;
+    }
+  };
+
+  // State untuk tracking NIK yang sudah dicek
+  const [nikValidation, setNikValidation] = useState({});
+
+  // Fungsi untuk validasi NIK real-time
+  const validateNIK = async (nik, index) => {
+    if (!nik || String(nik).replace(/\D/g, "").length !== 16) {
+      setNikValidation(prev => ({ ...prev, [index]: { valid: false, exists: false, message: "NIK harus 16 digit" } }));
+      return;
+    }
+
+    const cleanNIK = String(nik).replace(/\D/g, "");
+    const exists = await checkExistingNIK(cleanNIK);
+    
+    setNikValidation(prev => ({ 
+      ...prev, 
+      [index]: { 
+        valid: true, 
+        exists: exists, 
+        message: exists ? "NIK sudah terdaftar" : "NIK tersedia" 
+      } 
+    }));
   };
 
   const handleScanOCR = async () => {
@@ -190,7 +253,7 @@ export default function UploadDoc() {
             tempat_lahir: rincian.tempat_lahir || "",
             tanggal_lahir: rincian.tanggal_lahir || "",
             jenis_kelamin: rincian.jenis_kelamin || "",
-            status_hubungan: "Kepala Keluarga",
+            status_hubungan: "KEPALA KELUARGA", // Sesuaikan dengan data dari statushubungan.json
             pendidikan_akhir: "",
             agama: rincian.agama || "",
             status: rincian.status_perkawinan || "",
@@ -417,7 +480,41 @@ export default function UploadDoc() {
           toast.error(memberErr);
           return;
         }
-        fd.append("anggota_keluarga", JSON.stringify(anggota));
+        
+        // Validasi dan clean data sebelum dikirim
+        const cleanAnggota = anggota.map(member => ({
+          nik: String(member.nik || "").replace(/\D/g, "").substring(0, 16),
+          nama_lengkap: String(member.nama_lengkap || "").trim(),
+          tempat_lahir: String(member.tempat_lahir || "").trim(),
+          tanggal_lahir: member.tanggal_lahir || null,
+          jenis_kelamin: String(member.jenis_kelamin || "").trim(),
+          status_hubungan: String(member.status_hubungan || "").trim(),
+          pendidikan_akhir: String(member.pendidikan_akhir || "").trim(),
+          agama: String(member.agama || "").trim(),
+          status: String(member.status || "").trim(),
+          pekerjaan: String(member.pekerjaan || "").trim(),
+          nama_ayah: String(member.nama_ayah || "").trim(),
+          nama_ibu: String(member.nama_ibu || "").trim(),
+        }));
+        
+        // Cek NIK yang sudah ada
+        const existingNIKs = [];
+        for (const member of cleanAnggota) {
+          if (member.nik) {
+            const exists = await checkExistingNIK(member.nik);
+            if (exists) {
+              existingNIKs.push(member.nik);
+            }
+          }
+        }
+        
+        if (existingNIKs.length > 0) {
+          toast.error(`NIK berikut sudah terdaftar: ${existingNIKs.join(", ")}. Silakan gunakan NIK yang berbeda.`);
+          return;
+        }
+        
+        console.log("Data anggota yang akan dikirim:", cleanAnggota);
+        fd.append("anggota_keluarga", JSON.stringify(cleanAnggota));
       }
 
       // Rincian dokumen bebas (jenis_informasi -> isi_informasi)
@@ -446,11 +543,28 @@ export default function UploadDoc() {
       setTanggalDokumen("");
       setMetadataItems([{ jenis_informasi: "", isi_informasi: "" }]);
       setAnggota([initialMember()]);
+      setNikValidation({});
     } catch (err) {
       console.log("Upload Error:", err);
       console.log("Upload Error Response:", err?.response);
       console.log("Upload Error Data:", err?.response?.data);
-      const msg = err?.response?.data?.message || "Gagal mengunggah dokumen.";
+      
+      let msg = "Gagal mengunggah dokumen.";
+      
+      // Handle specific database errors
+      if (err?.response?.data?.error) {
+        const errorMsg = err.response.data.error;
+        if (errorMsg.includes("unique") || errorMsg.includes("duplicate")) {
+          msg = "NIK sudah terdaftar dalam sistem. Silakan gunakan NIK yang berbeda.";
+        } else if (errorMsg.includes("notNull") || errorMsg.includes("cannot be null")) {
+          msg = "Data anggota keluarga tidak lengkap. Silakan isi semua field yang wajib.";
+        } else {
+          msg = errorMsg;
+        }
+      } else if (err?.response?.data?.message) {
+        msg = err.response.data.message;
+      }
+      
       if (loadingToast) {
         toast.dismiss(loadingToast);
       }
@@ -859,6 +973,12 @@ export default function UploadDoc() {
                   <h2 className="text-lg font-semibold text-gray-800 text-left">
                     Anggota Keluarga
                   </h2>
+                  <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">
+                    ⚠️ Semua field wajib diisi
+                  </span>
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                    🔍 NIK akan dicek otomatis
+                  </span>
                 </div>
                 <div className="overflow-auto border border-blue-100 rounded-lg">
                   <table className="min-w-full text-sm">
@@ -884,17 +1004,50 @@ export default function UploadDoc() {
                         <tr key={idx} className="border-t">
                           <td className="px-3 py-2">
                             <input
-                              className="w-44 px-2 py-1 border rounded"
+                              className={`w-44 px-2 py-1 border rounded ${
+                                nikValidation[idx]?.exists
+                                  ? "border-red-300 bg-red-50"
+                                  : nikValidation[idx]?.valid && !nikValidation[idx]?.exists
+                                  ? "border-green-300 bg-green-50"
+                                  : m.nik && String(m.nik).replace(/\D/g, "").length !== 16
+                                  ? "border-red-300 bg-red-50"
+                                  : m.nik && String(m.nik).replace(/\D/g, "").length === 16
+                                  ? "border-yellow-300 bg-yellow-50"
+                                  : ""
+                              }`}
                               value={m.nik}
-                              onChange={(e) =>
-                                updateMember(idx, "nik", e.target.value)
-                              }
+                              onChange={(e) => {
+                                updateMember(idx, "nik", e.target.value);
+                                // Validasi NIK setelah user selesai mengetik (debounce)
+                                const timeoutId = setTimeout(() => {
+                                  validateNIK(e.target.value, idx);
+                                }, 1000);
+                                return () => clearTimeout(timeoutId);
+                              }}
+                              onBlur={(e) => validateNIK(e.target.value, idx)}
                               placeholder="16 digit"
                             />
+                            {nikValidation[idx] && (
+                              <div className={`text-xs mt-1 ${
+                                nikValidation[idx].exists 
+                                  ? "text-red-500" 
+                                  : nikValidation[idx].valid && !nikValidation[idx].exists
+                                  ? "text-green-500"
+                                  : "text-red-500"
+                              }`}>
+                                {nikValidation[idx].message}
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-2">
                             <input
-                              className="w-56 px-2 py-1 border rounded"
+                              className={`w-56 px-2 py-1 border rounded ${
+                                m.nama_lengkap && m.nama_lengkap.trim() === ""
+                                  ? "border-red-300 bg-red-50"
+                                  : m.nama_lengkap && m.nama_lengkap.trim() !== ""
+                                  ? "border-green-300 bg-green-50"
+                                  : ""
+                              }`}
                               value={m.nama_lengkap}
                               onChange={(e) =>
                                 updateMember(
@@ -903,6 +1056,7 @@ export default function UploadDoc() {
                                   e.target.value
                                 )
                               }
+                              placeholder="Nama lengkap"
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -953,7 +1107,9 @@ export default function UploadDoc() {
                           </td>
                           <td className="px-3 py-2">
                             <select
-                              className="w-44 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
+                              className={`w-44 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors ${
+                                m.status_hubungan && m.status_hubungan.trim() !== "" ? "border-green-300 bg-green-50" : !m.status_hubungan ? "" : "border-red-300 bg-red-50"
+                              }`}
                               value={m.status_hubungan}
                               onChange={(e) =>
                                 updateMember(
@@ -973,7 +1129,9 @@ export default function UploadDoc() {
                           </td>
                           <td className="px-3 py-2">
                             <select
-                              className="w-40 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
+                              className={`w-40 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors ${
+                                m.pendidikan_akhir && m.pendidikan_akhir.trim() !== "" ? "border-green-300 bg-green-50" : !m.pendidikan_akhir ? "" : "border-red-300 bg-red-50"
+                              }`}
                               value={m.pendidikan_akhir}
                               onChange={(e) =>
                                 updateMember(
@@ -993,7 +1151,9 @@ export default function UploadDoc() {
                           </td>
                           <td className="px-3 py-2">
                             <select
-                              className="w-36 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
+                              className={`w-36 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors ${
+                                m.agama && m.agama.trim() !== "" ? "border-green-300 bg-green-50" : !m.agama ? "" : "border-red-300 bg-red-50"
+                              }`}
                               value={m.agama}
                               onChange={(e) =>
                                 updateMember(idx, "agama", e.target.value)
@@ -1009,7 +1169,9 @@ export default function UploadDoc() {
                           </td>
                           <td className="px-3 py-2">
                             <select
-                              className="w-28 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
+                              className={`w-28 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors ${
+                                m.status && m.status.trim() !== "" ? "border-green-300 bg-green-50" : !m.status ? "" : "border-red-300 bg-red-50"
+                              }`}
                               value={m.status}
                               onChange={(e) =>
                                 updateMember(idx, "status", e.target.value)
@@ -1025,7 +1187,9 @@ export default function UploadDoc() {
                           </td>
                           <td className="px-3 py-2">
                             <select
-                              className="w-40 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors"
+                              className={`w-40 px-2 py-1 border rounded bg-white hover:border-blue-300 focus:border-blue-500 focus:outline-none transition-colors ${
+                                m.pekerjaan && m.pekerjaan.trim() !== "" ? "border-green-300 bg-green-50" : !m.pekerjaan ? "" : "border-red-300 bg-red-50"
+                              }`}
                               value={m.pekerjaan}
                               onChange={(e) =>
                                 updateMember(idx, "pekerjaan", e.target.value)

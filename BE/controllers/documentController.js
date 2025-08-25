@@ -619,28 +619,96 @@ const documentController = {
     }
   },
 
-  // 5. DELETE: Menghapus dokumen
+  /**
+   * 5. DELETE: Menghapus dokumen
+   * 
+   * Fungsi ini akan:
+   * 1. Menghapus data family_members jika dokumen adalah Kartu Keluarga
+   * 2. Menghapus dokumen dari database
+   * 3. Menghapus file fisik dari server
+   * 
+   * Menggunakan transaksi database untuk menjaga konsistensi data
+   * 
+   * @param {Object} req - Request object dengan params.id
+   * @param {Object} res - Response object
+   * @returns {Object} Response dengan status dan pesan
+   */
   deleteDocument: async (req, res) => {
+    const t = await sequelize.transaction();
+    
     try {
       const { id } = req.params;
+      console.log(`🗑️ Memulai proses penghapusan dokumen ID: ${id}`);
+      
       const document = await Document.findByPk(id);
       if (!document) {
+        console.log(`❌ Dokumen dengan ID ${id} tidak ditemukan`);
+        await t.rollback();
         return res.status(404).json({ message: "Dokumen tidak ditemukan" });
       }
 
-      // Hapus file fisik dari server (jika ada)
-      if (document.path_file) {
+      console.log(`📄 Dokumen ditemukan: ${document.tipe_dokumen} - ${document.judul}`);
+
+      // Jika dokumen adalah Kartu Keluarga, hapus data family_members terlebih dahulu
+      let deletedFamilyMembersCount = 0;
+      if (document.tipe_dokumen === "Kartu Keluarga") {
         try {
-          fs.unlinkSync(document.path_file);
-        } catch (err) {
-          // File mungkin sudah tidak ada, log saja
-          console.error("Gagal menghapus file fisik:", err.message);
+          console.log(`👨‍👩‍👧‍👦 Menghapus data anggota keluarga untuk dokumen ID: ${id}`);
+          
+          // Hapus semua family members yang terkait dengan dokumen ini
+          deletedFamilyMembersCount = await FamilyMember.destroy({
+            where: { documentId: id },
+            transaction: t
+          });
+          console.log(`✅ Berhasil menghapus ${deletedFamilyMembersCount} anggota keluarga untuk dokumen ID: ${id}`);
+        } catch (familyError) {
+          console.error("❌ Error menghapus family members:", familyError);
+          await t.rollback();
+          return res.status(500).json({ 
+            message: "Gagal menghapus data anggota keluarga", 
+            error: familyError.message 
+          });
         }
       }
 
-      await document.destroy();
-      res.status(200).json({ message: "Dokumen berhasil dihapus" });
+      // Hapus dokumen
+      console.log(`🗑️ Menghapus dokumen dari database...`);
+      await document.destroy({ transaction: t });
+
+      // Commit transaksi database
+      console.log(`✅ Commit transaksi database...`);
+      await t.commit();
+
+      // Hapus file fisik dari server (setelah transaksi berhasil)
+      if (document.path_file) {
+        try {
+          console.log(`📁 Menghapus file fisik: ${document.path_file}`);
+          fs.unlinkSync(document.path_file);
+          console.log(`✅ Berhasil menghapus file fisik: ${document.path_file}`);
+        } catch (err) {
+          // File mungkin sudah tidak ada, log saja
+          console.error("⚠️ Gagal menghapus file fisik:", err.message);
+          console.error("⚠️ File mungkin sudah tidak ada atau tidak dapat diakses");
+        }
+      } else {
+        console.log("ℹ️ Tidak ada file fisik yang perlu dihapus");
+      }
+      
+      const message = document.tipe_dokumen === "Kartu Keluarga" 
+        ? `Dokumen Kartu Keluarga dan ${deletedFamilyMembersCount} data anggota keluarga berhasil dihapus`
+        : "Dokumen berhasil dihapus";
+        
+      console.log(`🎉 Proses penghapusan selesai: ${message}`);
+        
+      res.status(200).json({ 
+        message: message,
+        deletedDocumentType: document.tipe_dokumen,
+        deletedDocumentId: id,
+        deletedFamilyMembersCount: deletedFamilyMembersCount || 0
+      });
     } catch (error) {
+      console.error("❌ Error dalam deleteDocument:", error);
+      await t.rollback();
       res
         .status(500)
         .json({ message: "Gagal menghapus dokumen", error: error.message });
@@ -703,6 +771,40 @@ const documentController = {
       res.status(500).json({
         message: "Gagal mengambil dokumen berdasarkan kategori",
         error: error.message,
+      });
+    }
+  },
+
+  // 6. CHECK: Mengecek apakah NIK sudah ada di database
+  checkNIKExists: async (req, res) => {
+    try {
+      const { nik } = req.params;
+      
+      if (!nik || nik.length !== 16) {
+        return res.status(400).json({
+          message: "NIK harus 16 digit",
+          exists: false
+        });
+      }
+
+      const existingMember = await FamilyMember.findOne({
+        where: { nik: nik }
+      });
+
+      res.status(200).json({
+        message: existingMember ? "NIK sudah terdaftar" : "NIK tersedia",
+        exists: !!existingMember,
+        data: existingMember ? {
+          nama_lengkap: existingMember.nama_lengkap,
+          status_hubungan: existingMember.status_hubungan
+        } : null
+      });
+    } catch (error) {
+      console.error("Error checking NIK:", error);
+      res.status(500).json({
+        message: "Gagal mengecek NIK",
+        error: error.message,
+        exists: false
       });
     }
   },

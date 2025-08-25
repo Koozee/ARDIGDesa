@@ -26,4 +26,7 @@ router.put("/updatedoc/:id", isUser, documentController.updateDocument);
 router.delete("/deletedoc/:id", isUser, documentController.deleteDocument);
 router.get("/getdocs/category/:categoryId", isUser, documentController.getDocumentsByCategory);
 
+// Endpoint untuk mengecek NIK yang sudah ada
+router.get("/check-nik/:nik", isUser, documentController.checkNIKExists);
+
 module.exports = router;
